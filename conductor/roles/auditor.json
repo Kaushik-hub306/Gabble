@@ -1,0 +1,19 @@
+{
+  "role": "gabble-auditor",
+  "description": "Whole-repo audit for savings. Reads everything, writes findings only.",
+  "tools": {
+    "allow": ["Read", "Bash", "Grep", "Glob"],
+    "deny": ["Write", "Edit", "NotebookEdit", "TaskCreate", "TaskUpdate", "Agent", "Workflow"]
+  },
+  "bash_restrictions": {
+    "allowed_commands": ["git", "gabble", "grep", "rg", "find", "ls", "cat", "wc", "cloc", "du", "npm", "cargo"],
+    "block_write": true,
+    "auto_gabble_prefix": true
+  },
+  "context_limits": {
+    "max_file_read": 2000,
+    "prefer_line_ranges": false
+  },
+  "token_budget": 200000,
+  "mode": "ultra"
+}

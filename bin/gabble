@@ -180,6 +180,8 @@ try {
     pct: rawOutput.length ? Math.round((1 - filtered.length / rawOutput.length) * 100) : 0,
     ms: execTimeMs,
     exit: exitCode,
+    ...(process.env.GABBLE_LAST_ROLE ? { role: process.env.GABBLE_LAST_ROLE } : {}),
+    ...(process.env.CONDUCTOR_WORKTREE ? { worktree: process.env.CONDUCTOR_WORKTREE } : {}),
   });
 
   fs.writeFileSync(HISTORY_FILE, JSON.stringify(history));

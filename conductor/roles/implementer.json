@@ -1,0 +1,18 @@
+{
+  "role": "gabble-implementer",
+  "description": "Writes minimum viable code. No reading beyond what the change touches.",
+  "tools": {
+    "allow": ["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+    "deny": ["Agent", "Workflow", "TaskCreate", "TaskUpdate", "NotebookEdit"]
+  },
+  "bash_restrictions": {
+    "allowed_commands": ["git", "gh", "gabble", "npm", "pnpm", "yarn", "cargo", "go", "python", "node", "pytest", "cargo test", "go test", "eslint", "ruff", "tsc", "docker", "kubectl", "grep", "rg", "find", "ls", "cat"],
+    "block_write": false,
+    "auto_gabble_prefix": true
+  },
+  "context_limits": {
+    "max_file_read": 300,
+    "prefer_line_ranges": true
+  },
+  "token_budget": 150000
+}

@@ -1,0 +1,18 @@
+{
+  "role": "gabble-reviewer",
+  "description": "Over-engineering + token waste review. Read-only. Finds what to delete.",
+  "tools": {
+    "allow": ["Read", "Bash", "Grep", "Glob"],
+    "deny": ["Write", "Edit", "NotebookEdit", "TaskCreate", "TaskUpdate", "Agent", "Workflow"]
+  },
+  "bash_restrictions": {
+    "allowed_commands": ["git", "gh", "gabble", "grep", "rg", "find", "ls", "cat", "wc", "diff"],
+    "block_write": true,
+    "auto_gabble_prefix": true
+  },
+  "context_limits": {
+    "max_file_read": 500,
+    "prefer_line_ranges": true
+  },
+  "token_budget": 50000
+}

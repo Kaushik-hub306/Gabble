@@ -15,6 +15,12 @@
         "commandWindows": "node \"%CLAUDE_PLUGIN_ROOT%\\hooks\\gabble-subagent.js\"",
         "timeout": 5000,
         "statusMessage": "Injecting gabble rules..."
+      },
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gabble-conductor.js\"",
+        "commandWindows": "node \"%CLAUDE_PLUGIN_ROOT%\\hooks\\gabble-conductor.js\"",
+        "timeout": 3000,
+        "statusMessage": "Gabble: Conductor session detected..."
       }
     ],
     "UserPromptSubmit": [

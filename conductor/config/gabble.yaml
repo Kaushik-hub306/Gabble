@@ -1,0 +1,105 @@
+# Gabble × Conductor configuration
+# Drop into .conductor/gabble.yaml or merge into existing conductor config
+
+# ── Agent profiles ──────────────────────────────────────────────────────────
+# Each role gets a scoped tool set — no role loads tools it doesn't need.
+# This eliminates the ~7-8k token overhead of unused MCP tool schemas per agent.
+
+agents:
+  # Default: all-purpose lazy dev
+  gabble:
+    prompt_template: ".conductor/agents/gabble.md"
+    mode: "full"                         # lite | full | ultra
+    auto_filter_commands: true           # transparent gabble prefix on bash
+    tools:
+      - Read
+      - Write
+      - Edit
+      - Bash
+      - Grep
+      - Glob
+
+  # Reviewer: over-engineering + token waste only
+  gabble-reviewer:
+    prompt_template: ".conductor/agents/gabble.md"
+    mode: "full"
+    role: "reviewer"
+    scope: "diff only — find things to delete, not correctness bugs"
+    output_format: "one finding per line: <tag> <what>. <replacement>."
+    auto_filter_commands: true
+    tools:
+      - Read
+      - Bash
+      - Grep
+      - Glob
+    # Reviewer doesn't need Write/Edit — read-only role
+
+  # Implementer: writes the actual code
+  gabble-implementer:
+    prompt_template: ".conductor/agents/gabble.md"
+    mode: "full"
+    role: "implementer"
+    scope: "minimum viable change — write only what's needed"
+    output_format: "code diff + ≤3 lines of explanation"
+    auto_filter_commands: true
+    tools:
+      - Read
+      - Write
+      - Edit
+      - Bash
+      - Grep
+      - Glob
+    # Implementer doesn't need Task/Workflow tools — just code
+
+  # Auditor: whole-repo scan for savings opportunities
+  gabble-auditor:
+    prompt_template: ".conductor/agents/gabble.md"
+    mode: "ultra"
+    role: "auditor"
+    scope: "entire repo — ranked list of what to delete/simplify/replace"
+    output_format: "one finding per line, ranked by impact"
+    auto_filter_commands: true
+    tools:
+      - Read
+      - Bash
+      - Grep
+      - Glob
+    # Auditor reads everything, writes nothing
+
+# ── Global settings ─────────────────────────────────────────────────────────
+global:
+  # Auto-inject gabble rules into every Conductor-spawned agent
+  inject_gabble_rules: true
+
+  # Default intensity for all agents
+  default_mode: "full"
+
+  # Auto-prefix shell commands with gabble filter
+  auto_filter_commands: true
+
+  # Commands to never filter (passthrough only)
+  filter_exclude:
+    - "ssh"
+    - "gh auth"
+    - "gpg"
+    - "pass"
+
+  # Track token usage per-agent and aggregate
+  track_tokens: true
+
+  # Tee: save raw output on failure so LLM can re-read without re-executing
+  tee_on_failure: true
+
+  # Alert if aggregate token usage exceeds threshold (per session)
+  token_budget: 500000
+
+# ── Worktree settings ────────────────────────────────────────────────────────
+worktrees:
+  # Inject GABBLE.md into every new worktree
+  inject_gabble_md: true
+
+  # Inject gabble-statusline into worktree shells
+  inject_statusline: true
+
+  # Clean up gabble token history files when worktree is deleted
+  cleanup_on_delete: true

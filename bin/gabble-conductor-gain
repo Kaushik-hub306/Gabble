@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+// gabble-conductor-gain — aggregate token savings across all Conductor worktrees
+// Conductor spawns agents in parallel. This shows the combined impact.
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const CONDUCTOR_DIR = path.join(os.homedir(), '.conductor');
+const GABBLE_DIR = path.join(os.homedir(), '.gabble');
+
+const args = process.argv.slice(2);
+const perAgent = args.includes('--per-agent') || args.includes('-p');
+const json = args.includes('--json');
+
+// Collect history from all worktree history files
+function collectAllHistory() {
+  const allHistory = [];
+
+  // Main gabble history
+  const mainHist = path.join(GABBLE_DIR, 'history.json');
+  try {
+    const h = JSON.parse(fs.readFileSync(mainHist, 'utf-8'));
+    h.forEach(e => { e.source = 'main'; });
+    allHistory.push(...h);
+  } catch (_) {}
+
+  // Worktree histories (if any)
+  const worktreesDir = path.join(CONDUCTOR_DIR, 'worktrees');
+  if (fs.existsSync(worktreesDir)) {
+    try {
+      for (const wt of fs.readdirSync(worktreesDir)) {
+        const wtHist = path.join(worktreesDir, wt, '.gabble', 'history.json');
+        try {
+          const h = JSON.parse(fs.readFileSync(wtHist, 'utf-8'));
+          h.forEach(e => { e.source = wt; });
+          allHistory.push(...h);
+        } catch (_) {}
+      }
+    } catch (_) {}
+  }
+
+  return allHistory;
+}
+
+const history = collectAllHistory();
+
+if (history.length === 0) {
+  console.log('No gabble history found. Run some Conductor workflows first.');
+  process.exit(0);
+}
+
+// Filter to recent
+const cutoff = Date.now() - 7 * 86400000;
+const recent = history.filter(e => e.ts > cutoff);
+
+// Aggregate
+const total = recent.length;
+const totalSaved = recent.reduce((s, e) => s + (e.saved || 0), 0);
+const avgPct = total ? Math.round(recent.reduce((s, e) => s + (e.pct || 0), 0) / total) : 0;
+
+// Per-source breakdown
+const bySource = {};
+for (const e of recent) {
+  const src = e.source || 'unknown';
+  if (!bySource[src]) bySource[src] = { count: 0, saved: 0, raw: 0, out: 0 };
+  bySource[src].count++;
+  bySource[src].saved += e.saved || 0;
+  bySource[src].raw += e.rawTokens || 0;
+  bySource[src].out += e.outTokens || 0;
+}
+
+// Per-role breakdown (if Conductor roles tracked)
+const byRole = {};
+for (const e of recent) {
+  const role = e.role || 'unscoped';
+  if (!byRole[role]) byRole[role] = { count: 0, saved: 0 };
+  byRole[role].count++;
+  byRole[role].saved += e.saved || 0;
+}
+
+if (json) {
+  console.log(JSON.stringify({
+    period: '7d',
+    totalCommands: total,
+    totalTokensSaved: totalSaved,
+    avgSavingsPct: avgPct,
+    agents: Object.keys(bySource).length,
+    bySource,
+    byRole,
+  }, null, 2));
+  process.exit(0);
+}
+
+console.log(`\n  gabble × conductor gain — last 7 days\n`);
+console.log(`  Agents tracked:  ${Object.keys(bySource).length}`);
+console.log(`  Commands:        ${total}`);
+console.log(`  Tokens saved:    ${totalSaved.toLocaleString()} (${avgPct}% avg)\n`);
+
+console.log('  Per worktree/agent:');
+for (const [src, stats] of Object.entries(bySource).sort((a, b) => b[1].saved - a[1].saved)) {
+  const pct = stats.raw ? Math.round((1 - stats.out / stats.raw) * 100) : 0;
+  const bar = '█'.repeat(Math.min(pct / 5, 16));
+  console.log(`  ${(pct + '%').padStart(4)} ${bar} ${src} (${stats.count} cmds, ${stats.saved.toLocaleString()} tokens)`);
+}
+
+if (perAgent && Object.keys(byRole).length > 1) {
+  console.log('\n  Per role:');
+  for (const [role, stats] of Object.entries(byRole).sort((a, b) => b[1].saved - a[1].saved)) {
+    console.log(`  ${role}: ${stats.count} cmds, ${stats.saved.toLocaleString()} tokens saved`);
+  }
+}
+
+// Estimate parallel agent savings
+const agentCount = Object.keys(bySource).length;
+if (agentCount > 1) {
+  const parallelBonus = Math.round(totalSaved * (agentCount - 1) * 0.3);
+  console.log(`\n  💡 ${agentCount} parallel agents — estimated ${parallelBonus.toLocaleString()} additional tokens`);
+  console.log('     saved via role-scoped tool profiles (unused tools stripped).');
+}
+
+console.log('');

@@ -1,0 +1,57 @@
+# Gabble workflow for Conductor
+# Drop into .conductor/workflows/gabble.wf
+# Ensures all spawned agents run with token optimization
+
+# ── Pre-flight: token audit ──────────────────────────────────────────────
+step audit_context {
+  agent = "gabble"
+  prompt = """
+    Run a quick token audit of the current worktree:
+    1. gabble-gain --since 1
+    2. gabble-discover --since 1
+    Report: tokens wasted in the last 24h. If >50k, recommend --ultra mode.
+  """
+}
+
+# ── Parallel: review + implement ──────────────────────────────────────────
+parallel {
+  step review {
+    agent = "gabble-reviewer"
+    prompt = """
+      Review the current diff for over-engineering and token waste.
+      Use gabble-review rules: one finding per line, tagged.
+      Focus: things to delete, not things to fix.
+    """
+  }
+
+  step implement {
+    agent = "gabble"
+    prompt = """
+      Implement the requested change using the combined ladder:
+      - YAGNI: question every new line
+      - Stdlib first: no new deps unless unavoidable
+      - Token-aware: grep before read, line ranges, strip noise
+      - Mark simplifications with // gabble: comments
+    """
+  }
+}
+
+# ── Gate: human approves or rejects ───────────────────────────────────────
+gate review_gate {
+  timeout = "30m"
+  on_approve = "cleanup"
+  on_reject = "rework"
+}
+
+# ── Cleanup: always run ───────────────────────────────────────────────────
+always {
+  step cleanup {
+    agent = "gabble"
+    prompt = """
+      Run final token audit:
+      1. gabble-gain
+      2. Harvest gabble: comments into GABBLE-DEBT.md
+      3. Report: tokens saved this session
+    """
+  }
+}

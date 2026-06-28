@@ -59,3 +59,4 @@ Resolution order: env var > config file > `full`.
 ## More
 
 Full docs: `GABBLE.md` in the project root.
+Conductor integration: `conductor/README.md` — role-scoped tool profiles for parallel agents.

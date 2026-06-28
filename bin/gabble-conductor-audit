@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+// gabble-conductor-audit — audit a Conductor session for token waste
+// Scans all worktree agents and identifies:
+// 1. Agents without gabble rules injected
+// 2. Agents loading unnecessary tools
+// 3. Redundant file reads across parallel agents
+// 4. Commands that should have been gabble-filtered but weren't
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const CONDUCTOR_DIR = path.join(os.homedir(), '.conductor');
+const GABBLE_DIR = path.join(os.homedir(), '.gabble');
+
+console.log('\n  gabble × conductor audit\n');
+
+const findings = [];
+
+// 1. Check agent templates
+const agentsDir = path.join(CONDUCTOR_DIR, 'agents');
+if (fs.existsSync(agentsDir)) {
+  const agents = fs.readdirSync(agentsDir).filter(f => f.endsWith('.md'));
+  for (const agent of agents) {
+    const content = fs.readFileSync(path.join(agentsDir, agent), 'utf-8');
+    if (!content.includes('gabble') && !content.includes('lazy') && !content.includes('YAGNI')) {
+      findings.push(`⚠ ${agent}: no gabble rules — add to .conductor/agents/${agent}`);
+    }
+    if (!content.includes('token')) {
+      findings.push(`⚠ ${agent}: no token awareness — agent may waste context`);
+    }
+  }
+  if (agents.length === 0) {
+    findings.push('⚠ No agent templates found — install gabble agent templates');
+  }
+} else {
+  findings.push('⚠ No .conductor/agents/ directory — run gabble-conductor-setup');
+}
+
+// 2. Check gabble config
+const gabbleYaml = path.join(CONDUCTOR_DIR, 'gabble.yaml');
+if (!fs.existsSync(gabbleYaml)) {
+  findings.push('⚠ No gabble.yaml in Conductor config — role-scoped tools not active');
+}
+
+// 3. Check for unfiltered commands in history
+const history = [];
+const mainHist = path.join(GABBLE_DIR, 'history.json');
+try { history.push(...JSON.parse(fs.readFileSync(mainHist, 'utf-8'))); } catch (_) {}
+
+// Also scan worktree histories
+const worktreesDir = path.join(CONDUCTOR_DIR, 'worktrees');
+if (fs.existsSync(worktreesDir)) {
+  try {
+    for (const wt of fs.readdirSync(worktreesDir)) {
+      const wtHist = path.join(worktreesDir, wt, '.gabble', 'history.json');
+      try { history.push(...JSON.parse(fs.readFileSync(wtHist, 'utf-8'))); } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+const recent = history.filter(e => e.ts > Date.now() - 7 * 86400000);
+const unfiltered = recent.filter(e => e.filter === 'none' && e.rawTokens > 200);
+
+if (unfiltered.length > 0) {
+  const byCmd = {};
+  for (const e of unfiltered) {
+    const base = e.cmd.split(' ')[0];
+    byCmd[base] = (byCmd[base] || 0) + 1;
+  }
+  const sorted = Object.entries(byCmd).sort((a, b) => b[1] - a[1]);
+  for (const [cmd, count] of sorted.slice(0, 5)) {
+    const filterable = ['git', 'pytest', 'cargo', 'go', 'npm', 'eslint', 'docker', 'kubectl', 'ls', 'grep'].includes(cmd);
+    findings.push(`${filterable ? '🔴' : '🟡'} ${cmd}: ${count} unfiltered commands — ${filterable ? 'has gabble filter!' : 'consider generic filter'}`);
+  }
+}
+
+// 4. Check for redundant reads
+const reads = recent.filter(e => e.cmd.includes('Read ') || e.cmd.includes('cat '));
+const readFiles = new Set(reads.map(e => e.cmd.match(/(?:Read |cat )(.+?)(?:\s|$)/)?.[1]).filter(Boolean));
+if (readFiles.size > 20) {
+  findings.push(`💡 ${readFiles.size} unique files read — check for redundant reads across agents`);
+}
+
+// 5. Check active agents
+const flagFiles = [];
+try {
+  for (const f of fs.readdirSync(path.join(os.homedir(), '.claude'))) {
+    if (f.includes('gabble') && f.includes('active')) flagFiles.push(f);
+  }
+} catch (_) {}
+if (flagFiles.length === 0) {
+  findings.push('⚠ No active gabble agents detected — gabble mode may be off');
+}
+
+// Output
+if (findings.length === 0) {
+  console.log('  ✓ All agents optimized. No token waste found.\n');
+} else {
+  for (const f of findings) {
+    console.log(`  ${f}`);
+  }
+  const criticalCount = findings.filter(f => f.startsWith('🔴') || f.startsWith('⚠')).length;
+  const estimatedWaste = unfiltered.reduce((s, e) => s + e.rawTokens, 0);
+  if (estimatedWaste > 10000) {
+    console.log(`\n  Estimated waste: ~${estimatedWaste.toLocaleString()} tokens from unfiltered commands.`);
+    console.log('  Run "gabble-init -g" in each worktree, or enable auto_filter_commands in gabble.yaml.');
+  }
+  console.log('');
+}

@@ -9,11 +9,11 @@
 // Unknown commands pass through unchanged.
 
 const { readMode } = require('./gabble-runtime');
-const { isShellSafe } = require('./gabble-config');
 
 const GABBLE_BIN = __dirname + '/../bin/gabble';
 
 const MODE = readMode();
+const IS_CONDUCTOR = !!process.env.CONDUCTOR_WORKTREE;
 if (!MODE || MODE === 'off' || MODE === 'review') process.exit(0);
 
 // Commands that benefit from filtering (high-noise, high-frequency)
@@ -103,6 +103,12 @@ process.stdin.on('end', () => {
 
     // Rewrite: prefix with gabble binary
     const rewritten = `${GABBLE_BIN} ${command}`;
+
+    // In Conductor: also tag the command with the agent role for per-role tracking
+    if (IS_CONDUCTOR) {
+      const role = process.env.CONDUCTOR_AGENT_ROLE || process.env.GABBLE_ROLE || 'unscoped';
+      process.env.GABBLE_LAST_ROLE = role;
+    }
 
     const response = {
       decision: 'modify',

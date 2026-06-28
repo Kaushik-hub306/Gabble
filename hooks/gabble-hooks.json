@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gabble-activate.js\"",
+        "commandWindows": "node \"%CLAUDE_PLUGIN_ROOT%\\hooks\\gabble-activate.js\"",
+        "timeout": 5000,
+        "statusMessage": "Loading gabble mode..."
+      }
+    ],
+    "SubagentStart": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gabble-subagent.js\"",
+        "commandWindows": "node \"%CLAUDE_PLUGIN_ROOT%\\hooks\\gabble-subagent.js\"",
+        "timeout": 5000,
+        "statusMessage": "Injecting gabble rules..."
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gabble-mode-tracker.js\"",
+        "commandWindows": "node \"%CLAUDE_PLUGIN_ROOT%\\hooks\\gabble-mode-tracker.js\"",
+        "timeout": 5000,
+        "statusMessage": "Tracking gabble mode..."
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/gabble-pretooluse.js\"",
+        "commandWindows": "node \"%CLAUDE_PLUGIN_ROOT%\\hooks\\gabble-pretooluse.js\"",
+        "timeout": 3000,
+        "statusMessage": "Gabble: optimizing command..."
+      }
+    ]
+  }
+}

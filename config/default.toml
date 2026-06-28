@@ -1,0 +1,51 @@
+# gabble: global lock, per-account locks if throughput matters
+
+# Gabble configuration — TOML format (~/.config/gabble/config.toml)
+
+[general]
+# Default intensity: "lite", "full", or "ultra"
+# Overridden by GABBLE_DEFAULT_MODE env var
+mode = "full"
+
+[tracking]
+# Path to token history database (JSON format)
+history_path = "~/.gabble/history.json"
+
+# Days to retain history (default 90)
+retention_days = 90
+
+[tee]
+# Save raw command output on failure for LLM to read without re-executing
+enabled = true
+
+# When to save: "failures", "always", or "never"
+mode = "failures"
+
+# Where to save tee files
+directory = "~/.gabble/tee"
+
+[hooks]
+# Commands to NEVER rewrite through gabble (always passthrough)
+# Useful for interactive commands or commands gabble can't filter
+exclude_commands = [
+  # "curl",        # uncomment to skip curl rewriting
+  # "ssh",         # always skipped — interactive
+  # "playwright",  # uncomment to skip playwright
+]
+
+# Always allow these even if they'd normally be excluded
+include_commands = []
+
+[telemetry]
+# Telemetry is OFF by default. Enable to contribute anonymous usage stats.
+enabled = false
+
+[filters.custom]
+# Custom TOML-based text filters for commands gabble doesn't natively support
+# Format: [filters.custom.<command-name>]
+#   strip_lines_matching = ["pattern1", "pattern2"]
+#   keep_lines_matching = ["important pattern"]
+
+# Example: strip "Using" lines from bundle install
+# [filters.custom."bundle install"]
+# strip_lines_starting_with = ["Using ", "Fetching ", "Installing "]

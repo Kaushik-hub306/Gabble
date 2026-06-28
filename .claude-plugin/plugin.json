@@ -1,0 +1,7 @@
+{
+  "name": "gabble",
+  "version": "1.0.0",
+  "description": "Gabble — lazy dev + token optimizer. Combines ponytail's YAGNI ladder with aggressive token optimization: precision retrieval, context hygiene, output compression, and cache-aware batching. Less code, fewer tokens, same answers.",
+  "author": "Gabble contributors",
+  "hooks": "./hooks/gabble-hooks.json"
+}

@@ -1,0 +1,65 @@
+#!/usr/bin/env node
+// gabble-discover — find missed token optimization opportunities
+// Scans bash history for commands that could benefit from gabble filtering
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const HISTORY_FILE = path.join(os.homedir(), '.gabble', 'history.json');
+
+const KNOWN_FILTERS = [
+  'git', 'npm', 'pnpm', 'yarn', 'cargo', 'go', 'pytest', 'jest',
+  'vitest', 'eslint', 'prettier', 'ruff', 'tsc', 'docker', 'kubectl',
+  'ls', 'tree', 'cat', 'find', 'grep', 'curl', 'wget',
+];
+
+let history = [];
+try { history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8')); } catch (_) {}
+
+if (history.length === 0) {
+  console.log('No gabble history yet.');
+  process.exit(0);
+}
+
+const args = process.argv.slice(2);
+const since = parseInt(args.find((_, i) => args[i - 1] === '--since') || '7');
+const cutoff = Date.now() - since * 86400000;
+const showAll = args.includes('--all');
+
+// Find commands that weren't filtered or had low savings
+const missed = history.filter(e => e.ts > cutoff && (e.filter === 'none' || e.pct < 20));
+
+// Group by command type
+const byCmd = {};
+for (const e of missed) {
+  const base = e.cmd.split(' ')[0];
+  if (!byCmd[base]) byCmd[base] = { count: 0, tokens: 0, examples: [] };
+  byCmd[base].count++;
+  byCmd[base].tokens += e.rawTokens || 0;
+  if (byCmd[base].examples.length < 3) byCmd[base].examples.push(e.cmd);
+}
+
+const sorted = Object.entries(byCmd).sort((a, b) => b[1].tokens - a[1].tokens);
+
+console.log(`\n  gabble discover — missed opportunities (last ${since} days)\n`);
+
+let totalMissed = 0;
+
+for (const [cmd, stats] of sorted) {
+  const filterable = KNOWN_FILTERS.some(f => cmd === f || cmd.startsWith(f));
+  const tag = filterable ? '🔧 filterable' : '⚡ generic';
+  totalMissed += stats.tokens;
+  console.log(`  ${tag} ${cmd} — ${stats.count}×, ~${stats.tokens.toLocaleString()} tokens unoptimized`);
+  if (showAll) {
+    for (const ex of stats.examples) {
+      console.log(`    → ${ex}`);
+    }
+  }
+}
+
+if (totalMissed === 0) {
+  console.log('  All commands already optimized. 🎉');
+} else {
+  console.log(`\n  Total: ~${totalMissed.toLocaleString()} tokens could be saved.\n  Run commands through "gabble <cmd>" or enable the auto-rewrite hook.\n`);
+}

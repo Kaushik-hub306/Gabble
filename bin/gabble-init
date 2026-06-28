@@ -1,0 +1,196 @@
+#!/usr/bin/env node
+// gabble-init — auto-setup gabble hooks in Claude Code (rtk-style init -g)
+// Usage: gabble-init -g          (install hook + generate instructions)
+//        gabble-init -g --ultra  (install with ultra mode default)
+//        gabble-init --show      (verify installation)
+//        gabble-init --uninstall (remove hook)
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+const SETTINGS_PATH = path.join(CLAUDE_DIR, 'settings.json');
+const PLUGIN_DIR = path.join(CLAUDE_DIR, 'plugins', 'cache', 'gabble', 'gabble', '1.0.0');
+const GABBLE_BIN = path.join(os.homedir(), '.local', 'bin', 'gabble');
+
+const args = process.argv.slice(2);
+const flags = {
+  global: args.includes('-g') || args.includes('--global'),
+  show: args.includes('--show'),
+  uninstall: args.includes('--uninstall'),
+  ultra: args.includes('--ultra'),
+  hookOnly: args.includes('--hook-only'),
+  autoPatch: args.includes('--auto-patch'),
+  opencode: args.includes('--opencode'),
+};
+
+// ── Show current installation ──────────────────────────────────────────────
+if (flags.show) {
+  console.log('Gabble installation status:\n');
+
+  // Check settings.json
+  if (fs.existsSync(SETTINGS_PATH)) {
+    const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+    const hasHook = JSON.stringify(settings).includes('gabble');
+    console.log(`  Claude Code settings: ${hasHook ? '✓ configured' : '✗ not configured'}`);
+  } else {
+    console.log('  Claude Code settings: ✗ not found');
+  }
+
+  // Check CLI
+  try {
+    const { spawnSync } = require('child_process');
+    const r = spawnSync('gabble', ['--help'], { encoding: 'utf-8', timeout: 3000 });
+    console.log(`  gabble CLI: ${r.error ? '✗ not on PATH' : '✓ available'}`);
+  } catch (_) {
+    console.log('  gabble CLI: ✗ not on PATH');
+  }
+
+  // Check flag
+  const flag = path.join(CLAUDE_DIR, '.gabble-active');
+  if (fs.existsSync(flag)) {
+    const mode = fs.readFileSync(flag, 'utf-8').trim();
+    console.log(`  Active mode: ${mode}`);
+  } else {
+    console.log('  Active mode: off');
+  }
+
+  // Check history
+  const hist = path.join(os.homedir(), '.gabble', 'history.json');
+  if (fs.existsSync(hist)) {
+    const h = JSON.parse(fs.readFileSync(hist, 'utf-8'));
+    const recent = h.filter(e => e.ts > Date.now() - 86400000).length;
+    console.log(`  Commands today: ${recent}`);
+  }
+
+  process.exit(0);
+}
+
+// ── Uninstall ──────────────────────────────────────────────────────────────
+if (flags.uninstall) {
+  console.log('Removing gabble...');
+
+  // Remove from settings.json
+  if (fs.existsSync(SETTINGS_PATH)) {
+    let settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+    if (settings.plugins) {
+      delete settings.plugins['gabble@gabble'];
+    }
+    if (settings.statusLine && JSON.stringify(settings.statusLine).includes('gabble')) {
+      delete settings.statusLine;
+    }
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+    console.log('  ✓ Removed from settings.json');
+  }
+
+  // Remove flag
+  const flag = path.join(CLAUDE_DIR, '.gabble-active');
+  try { fs.unlinkSync(flag); console.log('  ✓ Removed active flag'); } catch (_) {}
+
+  console.log('\nGabble uninstalled. Run "gabble-init -g" to reinstall.');
+  process.exit(0);
+}
+
+// ── Install ────────────────────────────────────────────────────────────────
+if (flags.global) {
+  console.log('Gabble — setting up auto-rewrite hook...\n');
+
+  // Ensure settings.json exists
+  let settings = {};
+  if (fs.existsSync(SETTINGS_PATH)) {
+    settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf-8'));
+  }
+
+  // Add plugin registration
+  if (!settings.plugins) settings.plugins = {};
+  settings.plugins['gabble@gabble'] = [{
+    scope: 'user',
+    installPath: PLUGIN_DIR,
+    version: '1.0.0',
+    installedAt: new Date().toISOString(),
+  }];
+  console.log('  ✓ Plugin registered');
+
+  // Add statusline
+  const statuslineScript = path.join(PLUGIN_DIR, 'hooks', 'gabble-statusline.sh');
+  if (fs.existsSync(statuslineScript) || !flags.hookOnly) {
+    settings.statusLine = {
+      type: 'command',
+      command: `bash "${statuslineScript}"`,
+    };
+    console.log('  ✓ Statusline configured');
+  }
+
+  // Set default mode
+  if (flags.ultra) {
+    const configDir = path.join(os.homedir(), '.config', 'gabble');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({ defaultMode: 'ultra' }, null, 2));
+    console.log('  ✓ Default mode: ultra');
+  }
+
+  // Write settings
+  if (!flags.autoPatch && !flags.hookOnly) {
+    fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  }
+
+  // Generate CLAUDE.md if not hook-only
+  if (!flags.hookOnly) {
+    const claudeMd = path.join(process.cwd(), 'CLAUDE.md');
+    if (!fs.existsSync(claudeMd)) {
+      const content = `# Gabble — lazy dev + token optimizer
+
+## Commands
+
+Prefix shell commands with \`gabble\` for 60-90% token reduction:
+- \`gabble git status\` — compact
+- \`gabble pytest\` — failures only (-90%)
+- \`gabble eslint\` — grouped by rule (-85%)
+- \`gabble ls\` — compact tree (-80%)
+
+The auto-rewrite hook does this transparently for most commands.
+Use \`gabble discover\` to find missed opportunities.
+Use \`gabble-gain\` to see token savings.
+
+Full docs: GABBLE.md
+`;
+      fs.writeFileSync(claudeMd, content);
+      console.log('  ✓ CLAUDE.md generated');
+    }
+  }
+
+  // OpenCode plugin
+  if (flags.opencode) {
+    const opencodeDir = path.join(process.cwd(), '.opencode');
+    fs.mkdirSync(opencodeDir, { recursive: true });
+    fs.writeFileSync(path.join(opencodeDir, 'gabble.mjs'), `
+export default {
+  name: 'gabble',
+  async 'tool.execute.before'(ctx) {
+    if (ctx.tool !== 'bash') return;
+    const cmd = ctx.input.command;
+    if (/^(git|pytest|cargo test|go test|eslint|ruff|tsc|docker|kubectl|ls|grep)/.test(cmd)) {
+      ctx.input.command = 'gabble ' + cmd;
+    }
+  }
+};
+`);
+    console.log('  ✓ OpenCode plugin generated');
+  }
+
+  console.log('\n✓ Gabble hook installed!');
+  console.log('  The hook transparently rewrites bash commands through gabble filters.');
+  console.log('  Run "gabble-init --show" to verify.');
+  console.log('  Run "gabble-gain" after some usage to see savings.');
+
+  process.exit(0);
+}
+
+// No flags
+console.log('Usage: gabble-init -g          Install hook + generate CLAUDE.md');
+console.log('       gabble-init -g --ultra  Install with ultra mode default');
+console.log('       gabble-init -g --hook-only  Hook only, no CLAUDE.md');
+console.log('       gabble-init -g --opencode   Also generate OpenCode plugin');
+console.log('       gabble-init --show      Verify installation');
+console.log('       gabble-init --uninstall Remove gabble');

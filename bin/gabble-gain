@@ -1,0 +1,140 @@
+#!/usr/bin/env node
+// gabble-gain — token savings analytics (rtk-style gain command)
+// Usage: gabble-gain [--graph] [--daily] [--json] [--since N]
+// Reads history from ~/.gabble/history.json
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const HISTORY_FILE = path.join(os.homedir(), '.gabble', 'history.json');
+
+const args = process.argv.slice(2);
+const flags = {
+  graph: args.includes('--graph') || args.includes('-g'),
+  daily: args.includes('--daily') || args.includes('-d'),
+  json: args.includes('--json') || args.includes('-j'),
+  all: args.includes('--all'),
+  since: parseInt(args.find((_, i) => args[i - 1] === '--since') || '30'),
+};
+
+// Read history
+let history = [];
+try { history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8')); } catch (_) {}
+
+if (history.length === 0) {
+  console.log('No gabble history yet. Run some gabble-filtered commands first.');
+  process.exit(0);
+}
+
+// Filter by timeframe
+const cutoff = Date.now() - flags.since * 86400000;
+const recent = history.filter(e => e.ts > cutoff);
+
+const total = recent.length;
+const totalSaved = recent.reduce((s, e) => s + (e.saved || 0), 0);
+const avgPct = total ? Math.round(recent.reduce((s, e) => s + (e.pct || 0), 0) / total) : 0;
+const totalRaw = recent.reduce((s, e) => s + (e.rawTokens || 0), 0);
+const totalOut = recent.reduce((s, e) => s + (e.outTokens || 0), 0);
+const avgMs = total ? Math.round(recent.reduce((s, e) => s + (e.ms || 0), 0) / total) : 0;
+
+// JSON output
+if (flags.json) {
+  console.log(JSON.stringify({
+    period: `${flags.since}d`,
+    totalCommands: total,
+    totalSavedTokens: totalSaved,
+    avgSavingsPct: avgPct,
+    rawTokens: totalRaw,
+    outputTokens: totalOut,
+    avgOverheadMs: avgMs,
+    topCommands: topCommands(recent),
+    byDay: dailyBreakdown(recent),
+  }, null, 2));
+  process.exit(0);
+}
+
+// Text output
+console.log(`\n  gabble gain — last ${flags.since} days\n`);
+console.log(`  Commands:       ${total}`);
+console.log(`  Tokens saved:   ${totalSaved.toLocaleString()} (${avgPct}% avg)`);
+console.log(`  Raw → filtered: ${totalRaw.toLocaleString()} → ${totalOut.toLocaleString()}`);
+console.log(`  Avg overhead:   ${avgMs}ms`);
+console.log();
+
+// Top commands
+const top = topCommands(recent);
+if (top.length) {
+  console.log('  Top savings by command:');
+  for (const [cmd, stats] of top.slice(0, 10)) {
+    const bar = '█'.repeat(Math.min(stats.pct / 5, 16));
+    console.log(`  ${(stats.pct + '%').padStart(4)} ${bar} ${cmd} (×${stats.count})`);
+  }
+}
+
+// ASCII graph (last 30 days)
+if (flags.graph) {
+  console.log('\n  Daily tokens saved (last 30 days):');
+  const daily = dailyBreakdown(recent);
+  const maxVal = Math.max(...daily.map(d => d.saved), 1);
+
+  for (const day of daily.slice(-30)) {
+    const barLen = Math.round((day.saved / maxVal) * 40);
+    const bar = '█'.repeat(barLen);
+    console.log(`  ${day.date} ${bar} ${day.saved.toLocaleString()}`);
+  }
+}
+
+// Daily breakdown
+if (flags.daily) {
+  console.log('\n  Day-by-day:');
+  const daily = dailyBreakdown(recent);
+  for (const day of daily) {
+    console.log(`  ${day.date}  ${day.count.toString().padStart(4)} cmds  ${day.saved.toLocaleString().padStart(8)} tokens saved  ${day.pct}%`);
+  }
+}
+
+// Missed opportunities
+const missed = recent.filter(e => !e.filter || e.filter === 'none' || e.pct < 10);
+if (missed.length > 0) {
+  console.log(`\n  💡 ${missed.length} commands with <10% savings — run "gabble discover" to find optimization opportunities.`);
+}
+
+console.log();
+
+function topCommands(entries) {
+  const byCmd = {};
+  for (const e of entries) {
+    const key = e.cmd.split(' ').slice(0, 2).join(' ');
+    if (!byCmd[key]) byCmd[key] = { count: 0, saved: 0, raw: 0, out: 0 };
+    byCmd[key].count++;
+    byCmd[key].saved += e.saved || 0;
+    byCmd[key].raw += e.rawTokens || 0;
+    byCmd[key].out += e.outTokens || 0;
+  }
+  return Object.entries(byCmd)
+    .map(([cmd, s]) => [cmd, { ...s, pct: s.raw ? Math.round((1 - s.out / s.raw) * 100) : 0 }])
+    .sort((a, b) => b[1].saved - a[1].saved);
+}
+
+function dailyBreakdown(entries) {
+  const byDay = {};
+  const now = Date.now();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(now - i * 86400000);
+    byDay[d.toISOString().slice(0, 10)] = { date: d.toISOString().slice(0, 10), count: 0, saved: 0, raw: 0, out: 0, pct: 0 };
+  }
+  for (const e of entries) {
+    const d = new Date(e.ts).toISOString().slice(0, 10);
+    if (byDay[d]) {
+      byDay[d].count++;
+      byDay[d].saved += e.saved || 0;
+      byDay[d].raw += e.rawTokens || 0;
+      byDay[d].out += e.outTokens || 0;
+    }
+  }
+  for (const day of Object.values(byDay)) {
+    day.pct = day.raw ? Math.round((1 - day.out / day.raw) * 100) : 0;
+  }
+  return Object.values(byDay).sort((a, b) => a.date.localeCompare(b.date));
+}

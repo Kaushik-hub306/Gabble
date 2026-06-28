@@ -1,0 +1,74 @@
+#!/usr/bin/env node
+// gabble-session — show gabble adoption stats for current session
+// Usage: gabble-session [--watch]
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const HIST = path.join(os.homedir(), '.gabble', 'history.json');
+const FLAG = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), '.gabble-active');
+
+// Read current mode
+let mode = 'off';
+try { mode = fs.readFileSync(FLAG, 'utf-8').trim(); } catch (_) {}
+
+// Read history
+let history = [];
+try { history = JSON.parse(fs.readFileSync(HIST, 'utf-8')); } catch (_) {}
+
+// Session = since last gabble-activate or last 6 hours
+const sessionStart = Math.max(
+  Date.now() - 6 * 3600000,
+  ...history.filter(e => e.cmd === 'session-start').map(e => e.ts),
+  Date.now() - 3600000
+);
+
+const session = history.filter(e => e.ts > sessionStart);
+const total = session.length;
+const saved = session.reduce((s, e) => s + (e.saved || 0), 0);
+const avgPct = total ? Math.round(session.reduce((s, e) => s + (e.pct || 0), 0) / total) : 0;
+
+// Filtered vs unfiltered
+const filtered = session.filter(e => e.filter !== 'none');
+const unfiltered = session.filter(e => e.filter === 'none');
+
+console.log(`\n  gabble session — ${mode.toUpperCase()} mode\n`);
+console.log(`  Mode:            ${mode}`);
+console.log(`  Commands:        ${total} (${filtered.length} filtered, ${unfiltered.length} raw)`);
+console.log(`  Tokens saved:    ${saved.toLocaleString()} (${avgPct}% avg)`);
+console.log(`  Adoption:        ${total ? Math.round(filtered.length / total * 100) : 0}%\n`);
+
+if (unfiltered.length > 0) {
+  const topMissed = {};
+  for (const e of unfiltered) {
+    const base = e.cmd.split(' ')[0];
+    topMissed[base] = (topMissed[base] || 0) + 1;
+  }
+  const sorted = Object.entries(topMissed).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  console.log('  Top unfiltered commands:');
+  for (const [cmd, count] of sorted) {
+    console.log(`    ${cmd} (${count}×) — try "gabble ${cmd} ..."`);
+  }
+  console.log('');
+}
+
+// Watch mode
+if (process.argv.includes('--watch') || process.argv.includes('-w')) {
+  console.log('  Watching for new commands... (Ctrl+C to stop)\n');
+  let lastSize = history.length;
+  setInterval(() => {
+    try {
+      const h = JSON.parse(fs.readFileSync(HIST, 'utf-8'));
+      if (h.length > lastSize) {
+        const newest = h.slice(lastSize);
+        for (const e of newest) {
+          const icon = e.filter !== 'none' ? '✓' : '○';
+          const pct = e.pct ? ` (-${e.pct}%)` : '';
+          console.log(`  ${icon} ${e.cmd.slice(0, 60)}${pct}`);
+        }
+        lastSize = h.length;
+      }
+    } catch (_) {}
+  }, 2000);
+}

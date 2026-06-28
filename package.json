@@ -1,0 +1,45 @@
+{
+  "name": "@gabble/plugin",
+  "version": "1.0.0",
+  "description": "Gabble — lazy dev + token optimizer. Combines ponytail's YAGNI ladder with rtk-style command filtering. Less code, fewer tokens, same answers.",
+  "author": "Gabble contributors",
+  "license": "MIT",
+  "keywords": [
+    "token-optimization",
+    "llm",
+    "ai-coding",
+    "claude-code",
+    "claude-code-plugin",
+    "yagni",
+    "lazy-dev",
+    "context-compression",
+    "cost-reduction",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kaushik-hub306/Gabble"
+  },
+  "main": "hooks/gabble-activate.js",
+  "bin": {
+    "gabble": "./bin/gabble",
+    "gabble-gain": "./bin/gabble-gain",
+    "gabble-discover": "./bin/gabble-discover",
+    "gabble-init": "./bin/gabble-init",
+    "gabble-session": "./bin/gabble-session"
+  },
+  "files": [
+    "bin/",
+    "hooks/",
+    "filters/",
+    "skills/",
+    "mcp/",
+    "config/",
+    "GABBLE.md",
+    "AGENTS.md",
+    "install.sh"
+  ],
+  "scripts": {
+    "test": "node -e \"require('./hooks/gabble-config'); require('./hooks/gabble-runtime'); require('./hooks/gabble-instructions'); console.log('smoke test passed')\""
+  }
+}

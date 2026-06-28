@@ -1,0 +1,189 @@
+#!/usr/bin/env node
+// gabble: rtk-style CLI filter — runs commands and compresses output for LLM context
+// Usage: gabble git status   OR   gabble -- pytest -x test_auth.py
+// Falls back to passthrough for unknown commands. Tracks savings in ~/.gabble/history.json.
+
+const { spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const DATA_DIR = path.join(os.homedir(), '.gabble');
+const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
+const TEE_DIR = path.join(DATA_DIR, 'tee');
+const HISTORY_DAYS = 90;
+
+// ── Filter modules (lazy-loaded) ──────────────────────────────────────────
+const FILTERS = {
+  git: () => require('../filters/git'),
+  test: () => require('../filters/test'),
+  lint: () => require('../filters/lint'),
+  build: () => require('../filters/build'),
+  files: () => require('../filters/files'),
+  docker: () => require('../filters/docker'),
+  aws: () => require('../filters/aws'),
+  packages: () => require('../filters/packages'),
+  ruby: () => require('../filters/ruby'),
+};
+
+// ── Routing table: command → [filterName, subcommand] ────────────────────
+const ROUTES = {
+  git: 'git',
+  gh: 'git',
+  pytest: ['test', 'pytest'],
+  jest: ['test', 'jest'],
+  vitest: ['test', 'vitest'],
+  'cargo test': ['test', 'cargo'],
+  'go test': ['test', 'go'],
+  'npm test': ['test', 'npm'],
+  'pnpm test': ['test', 'pnpm'],
+  'yarn test': ['test', 'yarn'],
+  eslint: 'lint',
+  prettier: 'lint',
+  tsc: 'build',
+  'cargo build': 'build',
+  'cargo clippy': 'lint',
+  'next build': 'build',
+  ruff: 'lint',
+  'golangci-lint': 'lint',
+  ls: 'files',
+  tree: 'files',
+  cat: 'files',
+  find: 'files',
+  grep: 'files',
+  rg: 'files',
+  docker: 'docker',
+  kubectl: 'docker',
+  curl: 'build',
+  wget: 'build',
+  aws: 'aws',
+  pip: 'packages',
+  pnpm: 'packages',
+  bundle: 'ruby',
+  rspec: 'ruby',
+  rubocop: 'ruby',
+};
+
+// ── CLI parsing ───────────────────────────────────────────────────────────
+const args = process.argv.slice(2);
+let verbose = 0;
+let ultra = false;
+const passthrough = [];
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === '-v') { verbose++; continue; }
+  if (args[i] === '-vv') { verbose += 2; continue; }
+  if (args[i] === '-vvv') { verbose += 3; continue; }
+  if (args[i] === '-u' || args[i] === '--ultra-compact') { ultra = true; continue; }
+  if (args[i] === '--') { passthrough.push(...args.slice(i + 1)); break; }
+  passthrough.push(args[i]);
+}
+
+if (passthrough.length === 0) {
+  console.error('gabble: no command given. Usage: gabble <command> [args...]');
+  process.exit(1);
+}
+
+// ── Route resolution ──────────────────────────────────────────────────────
+const cmd = passthrough[0];
+const cmdArgs = passthrough.slice(1);
+const cmdStr = passthrough.join(' ');
+
+let filterName = null;
+let subcommand = null;
+
+// Try exact match first, then prefix match
+for (const [key, val] of Object.entries(ROUTES)) {
+  if (cmdStr.startsWith(key)) {
+    if (Array.isArray(val)) {
+      filterName = val[0];
+      subcommand = val[1];
+    } else {
+      filterName = val;
+      subcommand = null;
+    }
+    break;
+  }
+}
+
+// ── Execute ───────────────────────────────────────────────────────────────
+const startTime = Date.now();
+
+const result = spawnSync(passthrough[0], cmdArgs, {
+  encoding: 'utf-8',
+  maxBuffer: 50 * 1024 * 1024,
+  timeout: 300000,
+  env: { ...process.env },
+});
+
+const execTimeMs = Date.now() - startTime;
+const rawOutput = (result.stdout || '') + (result.stderr || '');
+const exitCode = result.status ?? (result.error ? 1 : 0);
+
+// ── Filter ────────────────────────────────────────────────────────────────
+let filtered = rawOutput;
+
+if (filterName && rawOutput.length > 0) {
+  try {
+    const filterMod = FILTERS[filterName]();
+    const filterFn = subcommand ? filterMod[subcommand] : filterMod.default || filterMod.filter || filterMod;
+    if (typeof filterFn === 'function') {
+      filtered = filterFn(rawOutput, { verbose, ultra, exitCode, cmd: cmdStr });
+    }
+  } catch (_) {
+    // filter failed — fall through to raw output
+    if (verbose > 0) console.error('[gabble] filter error, falling back to raw');
+  }
+}
+
+// ── Verbose dump ──────────────────────────────────────────────────────────
+if (verbose >= 3) {
+  console.error('[gabble] ── RAW OUTPUT ──');
+  console.error(rawOutput.slice(0, 5000));
+  console.error('[gabble] ── END RAW ──');
+}
+if (verbose >= 2) {
+  console.error(`[gabble] command: ${cmdStr}`);
+  console.error(`[gabble] filter: ${filterName || 'none'}  time: ${execTimeMs}ms`);
+}
+
+// ── Output ────────────────────────────────────────────────────────────────
+if (filtered) process.stdout.write(filtered);
+
+// ── Tee: save raw output on failure ─────────────────────────────────────
+if (exitCode !== 0 && rawOutput) {
+  try {
+    fs.mkdirSync(TEE_DIR, { recursive: true });
+    const teeFile = path.join(TEE_DIR, `${Date.now()}_${passthrough[0]}.log`);
+    fs.writeFileSync(teeFile, rawOutput);
+    process.stderr.write(`\n[gabble] full output saved: ${teeFile}\n`);
+  } catch (_) { /* best-effort */ }
+}
+
+// ── Track ─────────────────────────────────────────────────────────────────
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+
+  let history = [];
+  try { history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf-8')); } catch (_) {}
+
+  const cutoff = Date.now() - HISTORY_DAYS * 86400000;
+  history = history.filter(e => e.ts > cutoff);
+
+  history.push({
+    ts: Date.now(),
+    cmd: cmdStr.slice(0, 200),
+    filter: filterName || 'none',
+    rawTokens: Math.ceil(rawOutput.length / 4),
+    outTokens: Math.ceil(filtered.length / 4),
+    saved: Math.ceil((rawOutput.length - filtered.length) / 4),
+    pct: rawOutput.length ? Math.round((1 - filtered.length / rawOutput.length) * 100) : 0,
+    ms: execTimeMs,
+    exit: exitCode,
+  });
+
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(history));
+} catch (_) { /* best-effort tracking */ }
+
+// ── Exit ──────────────────────────────────────────────────────────────────
+process.exit(exitCode);

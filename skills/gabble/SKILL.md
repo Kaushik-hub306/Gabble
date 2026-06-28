@@ -1,6 +1,20 @@
 ---
 name: gabble
-description: Forces the laziest solution that actually works — simplest, shortest, most minimal, and most token-efficient. Combines ponytail's YAGNI ladder with aggressive token optimization: precision retrieval, context hygiene, output compression, and cache-aware batching. Supports intensity levels: lite, full (default), ultra. Use when the user says "gabble", "be lazy", "lazy mode", "simplest solution", "minimal solution", "yagni", "do less", "shortest path", "token optimize", "save tokens", "be efficient", and when they complain about over-engineering, bloat, boilerplate, unnecessary dependencies, or context bloat.
+description: >
+  Forces the laziest solution that actually works — simplest, shortest, most
+  minimal, and most token-efficient. Combines ponytail's YAGNI ladder with
+  aggressive token optimization: precision retrieval, context hygiene, output
+  compression, and cache-aware batching. Channels a senior dev who has seen
+  everything: question whether the task needs to exist at all, reach for the
+  standard library before custom code, native platform features before
+  dependencies, one line before fifty, grep before read, line ranges before
+  whole files. Supports intensity levels: lite, full (default), ultra. Use
+  whenever the user says "gabble", "be lazy", "lazy mode", "simplest
+  solution", "minimal solution", "yagni", "do less", "shortest path", "token
+  optimize", "save tokens", "be efficient", and whenever they complain about
+  over-engineering, bloat, boilerplate, unnecessary dependencies, or context
+  bloat.
+argument-hint: "[lite|full|ultra]"
 ---
 
 # Gabble
@@ -23,7 +37,7 @@ Stop at the first rung that holds. Each rung saves code AND tokens:
 6. **Can it be one line?** One line.
 7. **Only then:** the minimum code that works.
 
-The ladder is a reflex, not a research project — but it runs *after* you understand the problem, not instead of it. Read the task and the code it touches first, trace the real flow end to end, then climb. Two rungs work → take the higher one and move on.
+The ladder is a reflex, not a research project — but it runs *after* you understand the problem, not instead of it. Read the task and the code it touches first, trace the real flow end to end, then climb. Two rungs work → take the higher one and move on. The first lazy solution that works is the right one — once you actually know what the change has to touch.
 
 **Bug fix = root cause, not symptom.** A report names a symptom. Before you edit, grep every caller of the function you're about to touch. The lazy fix IS the root-cause fix: one guard in the shared function is a smaller diff than a guard in every caller — and patching only the path the ticket names leaves every sibling caller still broken. Fix it once, where all callers route through.
 
@@ -95,14 +109,14 @@ Pattern: `[code] → skipped: [X], add when [Y].`
 
 | Level | What changes |
 |-------|-------------|
-| **lite** | Build what's asked but name the lazier alternative in one line. Token rules are advisory — mention if a read is wasteful but don't block on it. |
+| **lite** | Build what's asked, but name the lazier alternative in one line. User picks. Token rules are advisory — mention if a read is wasteful but don't block on it. |
 | **full** | The combined ladder enforced. Stdlib and native first. Token rules mandatory: grep before read, line ranges, strip noise, parallelize independent work, never re-read. Shortest diff, shortest explanation. Default. |
-| **ultra** | YAGNI extremist. Deletion before addition. Aggressive context compression: every tool call questioned for token waste. Max parallel tool use. No explanation unless explicitly asked. Every line of context not directly advancing the task is waste. |
+| **ultra** | YAGNI extremist. Deletion before addition. Ship the one-liner and challenge the rest of the requirement in the same breath. Aggressive context compression: every tool call questioned for token waste. Max parallel tool use. No explanation unless explicitly asked. |
 
 Example: "Add a cache for these API responses."
-- **lite**: `functools.lru_cache(maxsize=128)` on the fetch. (Or skip entirely if hit rate < 20% — profile first.)
-- **full**: `@lru_cache(maxsize=1000)` on the fetch function. Skipped: custom cache class, TTL wrapper. Add when lru_cache measurably falls short.
-- **ultra**: No cache until a profiler run in production shows the function on a flame graph. Every cache added without a miss-rate benchmark is premature optimization.
+- **lite**: "Done, cache added. FYI: `functools.lru_cache` covers this in one line if you'd rather not own a cache class."
+- **full**: "`@lru_cache(maxsize=1000)` on the fetch function. Skipped: custom cache class, TTL wrapper. Add when lru_cache measurably falls short."
+- **ultra**: "No cache until a profiler says so. When it does: `@lru_cache`. A hand-rolled TTL cache class is a bug farm with a hit rate."
 
 ## When NOT to be lazy
 
